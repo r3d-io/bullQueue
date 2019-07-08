@@ -1,0 +1,17 @@
+{
+  "name": "bullqueue",
+  "version": "1.0.0",
+  "description": "A demo implementation of bull queue ",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Anuj",
+  "license": "ISC",
+  "dependencies": {
+    "bull": "^3.10.0",
+    "dotenv": "^8.0.0",
+    "fs": "0.0.1-security",
+    "web3": "^1.0.0-beta.37"
+  }
+}
