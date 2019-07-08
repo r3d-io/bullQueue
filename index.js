@@ -1,3 +1,5 @@
+"use strict";
+
 const Web3 = require('web3');
 const dotenv = require('dotenv');
 var Bull = require('bull');
@@ -17,27 +19,25 @@ async function getBlockDetail(block_address) {
   }
 }
 
-function addQueue(transactions, transactionQueue) {
+function addQueue(address, transactions, transactionQueue) {
   transactions.forEach(trans => {
-    transactionQueue.add({ trans });
-    console.log(`Added transaction ${trans}`)
+    transactionQueue.add({ trans: trans, block: address });
+    console.log(`Added transaction ${trans} on queue ${address}`)
   });
 }
 
-async function processTransaction(block_address, transArray, transactionQueue) {
-  let transactionCount = await web3.eth.getBlockTransactionCount(block_address)
-  console.log(`transaction count ${transactionCount} for queue ${block_address}`)
+async function processTransaction(transArray, transactionQueue) {
   try {
     transactionQueue.process(async (job, jobDone) => {
+      let transactionCount = await web3.eth.getBlockTransactionCount(job.data.block)
       let trans = job.data.trans
       let transObject = await web3.eth.getTransaction(trans)
-      transArray.push(transObject)
-      console.log(`proccessed transaction ${trans} on queue ${block_address}`)
+      transArray[job.data.block].push(transObject)
+      console.log(`proccessed transaction ${trans} on queue ${job.data.block}`)
       jobDone();
-      // console.log(`length ${transArray.length} === ${transactionCount}`)
-      if (transArray.length === transactionCount) {
-        writeToFile(block_address, transArray)
-        transactionQueue.close()
+      if (transArray[job.data.block].length === transactionCount) {
+        writeToFile(job.data.block, transArray)
+        // transactionQueue.close()
       }
     });
   }
@@ -46,10 +46,9 @@ async function processTransaction(block_address, transArray, transactionQueue) {
   }
 }
 
-async function queueCompletion(transArray, transactionQueue) {
+async function queueCompletion(transactionQueue) {
   transactionQueue.on('completed', (job, result) => {
     job.remove();
-    // console.log(job)
     console.log(`Job with id ${job.id} has been completed`);
   })
 }
@@ -73,16 +72,16 @@ function writeToFile(block_address, transArray) {
 }
 
 async function main(block_arr) {
-  let transactionQueue = {}
+  // let transactionQueue = {}
   let transArray = {}
+  let transactionQueue = new Bull('Ethereum Queue');
   block_arr.forEach(async address => {
     transArray[address] = []
-    transactionQueue[address] = new Bull(address);
-    transactions = await getBlockDetail(address)
-    addQueue(transactions, transactionQueue[address])
-    processTransaction(address, transArray[address], transactionQueue[address])
-    queueCompletion(transArray[address], transactionQueue[address])
+    let transactions = await getBlockDetail(address)
+    addQueue(address, transactions, transactionQueue)
   });
+  processTransaction(transArray, transactionQueue)
+  queueCompletion(transactionQueue)
 }
 
 let block_arr = ["0xd6138375419d0d82e333b2e84998f88eb42563dcf46cbfa19eefbecdcd5935e7",
