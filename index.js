@@ -10,6 +10,11 @@ let testnet = `https://rinkeby.infura.io/${process.env.INFURA_ACCESS_TOKEN}`
 let web3 = new Web3(new Web3.providers.HttpProvider(testnet))
 let transactionQueue = new Bull('Transaction-Queue');
 
+async function getBlockDetail(block_address) {
+  let blockDetail = await web3.eth.getBlock(block_address)
+  return blockDetail.transactions
+}
+
 function addQueue(transactions) {
   transactions.forEach(trans => {
     transactionQueue.add({ trans });
@@ -34,26 +39,27 @@ async function processTransaction() {
 
 async function queueCompletion() {
   transactionQueue.on('global: completed', (job, result) => {
-    console.log(transArray)
     job.remove();
     transactionQueue.close()
+    console.log(transArray)
     console.log(`Job with id ${result} has been completed`);
   })
 }
 
-async function getBlockDetail(block_address) {
-  let blockDetail = await web3.eth.getBlock(block_address)
-  return blockDetail.transactions
-}
 
 function writeToFile(block_address) {
   console.log(`Executing file write`)
   var json = JSON.stringify(transArray);
-  fs.writeFile(`${block_address}.json`, json, 'utf8', function (err) {
-    if (err) throw err;
-    console.log('complete');
-    process.exit()
-  });
+  try {
+    fs.writeFile(`${block_address}.json`, json, 'utf8', function (err) {
+      if (err) throw err;
+      console.log('complete');
+      process.exit()
+    });
+  }
+  catch(error){
+    console.log(`Unable to write to the file due to${error}`)
+  }
 }
 
 async function main() {
