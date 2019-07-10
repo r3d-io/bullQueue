@@ -35,7 +35,7 @@ class BlockDetailQueue {
   addQueue(hash, transactions, transactionQueue) {
     try {
       transactions.forEach(txn => {
-        transactionQueue.add({ transaction: txn, block: hash });
+        transactionQueue.add({ transaction: txn, block: hash },{removeOnComplete:true, attempts:5 });
         logger.info(`Added transaction ${chalk.cyan(txn)} \n on queue ${chalk.yellow(hash)}`)
       });
     }
@@ -98,7 +98,7 @@ class BlockDetailQueue {
         this.addQueue(blockHash, transactions, this.transactionQueue)
       });
       this.processTransaction(blockTxnCount, blockTxnArray, this.transactionQueue)
-      this.queueCompletion(this.transactionQueue)
+      // this.queueCompletion(this.transactionQueue)
     }
     catch (error) {
       logger.error(`Unable to execute program due to ${chalk.red(error)}`)
