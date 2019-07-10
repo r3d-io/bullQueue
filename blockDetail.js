@@ -13,96 +13,95 @@ logger.level = 'error';
 class BlockDetailQueue {
 
   constructor(queueName, testnet, dirPath, output) {
-    if (!output)
-      console.log("program executing please wait")
+    if (output)
+      logger.level = 'info';
+    console.log("program executing please wait")
     this.web3 = new Web3(new Web3.providers.HttpProvider(testnet))
     this.transactionQueue = new Bull(queueName);
     this.dirPath = dirPath
     this.output = output
   }
 
-  async getBlockDetail(block_address) {
+  async getBlockDetail(blockHash) {
     try {
-      let blockDetail = await this.web3.eth.getBlock(block_address)
+      let blockDetail = await this.web3.eth.getBlock(blockHash)
       return blockDetail.transactions
     }
     catch (error) {
-      logger.error(`Unable to get block details ${chalk.blue(error)}`)
+      logger.error(`Unable to get block details ${chalk.red(error)}`)
     }
   }
 
-  addQueue(address, transactions, transactionQueue) {
+  addQueue(hash, transactions, transactionQueue) {
     try {
-      transactions.forEach(trans => {
-        transactionQueue.add({ trans: trans, block: address });
-        if (this.output)
-          console.log(`Added transaction ${trans} on queue ${address}`)
-      });
-    }
-    catch(error){
-      logger.error(`Unable to add trnasction to queue because ${chalk.blue(error)}`)
-    }
-  }
-
-  async processTransaction(transArray, transactionQueue) {
-    try {
-      transactionQueue.process(async (job, jobDone) => {
-        let transactionCount = await this.web3.eth.getBlockTransactionCount(job.data.block)
-        let trans = job.data.trans
-        let transObject = await this.web3.eth.getTransaction(trans)
-        transArray[job.data.block].push(transObject)
-        if (this.output)
-          console.log(`proccessed transaction ${trans} on queue ${job.data.block}`)
-        jobDone();
-        if (transArray[job.data.block].length === transactionCount) {
-          this.writeToFile(job.data.block, transArray)
-        }
+      transactions.forEach(txn => {
+        transactionQueue.add({ transaction: txn, block: hash });
+        logger.info(`Added transaction ${chalk.cyan(txn)} \n on queue ${chalk.yellow(hash)}`)
       });
     }
     catch (error) {
-      logger.error(`Unable to process transaction due to ${chalk.blue(error)}`)
+      logger.error(`Unable to add trnasction to queue because ${chalk.red(error)}`)
+    }
+  }
+
+  async processTransaction(blockTxnCount, blockTxnArray, transactionQueue) {
+    try {
+      transactionQueue.process(async (job, jobDone) => {
+        let txn = job.data.transaction
+        let blockHash = job.data.block
+        let txnObject = await this.web3.eth.getTransaction(txn)
+        blockTxnArray[blockHash].push(txnObject)
+        logger.info(`proccessed transaction ${chalk.cyan(txn)} \n on queue ${chalk.yellow(blockHash)}`)
+        jobDone();
+        if (blockTxnArray[blockHash].length === blockTxnCount[blockHash])
+          this.writeToFile(blockHash, blockTxnArray[blockHash])
+      });
+    }
+    catch (error) {
+      logger.error(`Unable to process transaction due to ${chalk.red(error)}`)
     }
   }
 
   async queueCompletion(transactionQueue) {
     transactionQueue.on('completed', (job, result) => {
       job.remove();
-      if (this.output)
-        console.log(`Job with id ${job.id} has been completed`);
+      logger.info(`Job with id ${job.id} has been completed`);
     })
   }
 
-  writeToFile(block_address, txnArray) {
-    if (!fs.existsSync(this.dirPath)) {
-      fs.mkdirSync(this.dirPath);
-    }
-    var json = JSON.stringify(txnArray);
+  writeToFile(blockHash, txnArray) {
     try {
-      fs.writeFile(`${this.dirPath}/${block_address}.json`, json, 'utf8', function (err) {
+      if (!fs.existsSync(this.dirPath)) {
+        fs.mkdirSync(this.dirPath);
+      }
+      var json = JSON.stringify(txnArray);
+      fs.writeFile(`${this.dirPath}/${blockHash}.json`, json, 'utf8', function (err) {
         if (err) throw err;
-        console.log(`completed file write for ${block_address}`);
+        console.log(chalk.red(`completed file write for ${blockHash}`));
       });
     }
     catch (error) {
-      logger.error(`Unable to write to the file due to${chalk.blue(error)}`)
+      logger.error(`Unable to write to the file due to ${chalk.red(error)}`)
     }
   }
 
-  async main(block_arr) {
+  async main(blockHashes) {
     let blockTxnArray = {}
+    let blockTxnCount = {}
     try {
-      block_arr.forEach(async blochHash => {
-        blockTxnArray[blochHash] = []
-        let transactions = await this.getBlockDetail(blochHash)
+      blockHashes.forEach(async blockHash => {
+        blockTxnArray[blockHash] = []
+        blockTxnCount[blockHash] = await this.web3.eth.getBlockTransactionCount(blockHash)
+        let transactions = await this.getBlockDetail(blockHash)
         if (typeof transactions === 'undefined' || transactions.length <= 0)
-          throw new Error ("Empty array receieved")
-        this.addQueue(blochHash, transactions, this.transactionQueue)
+          throw new Error("Empty array receieved")
+        this.addQueue(blockHash, transactions, this.transactionQueue)
       });
-      this.processTransaction(blockTxnArray, this.transactionQueue)
+      this.processTransaction(blockTxnCount, blockTxnArray, this.transactionQueue)
       this.queueCompletion(this.transactionQueue)
     }
     catch (error) {
-      logger.error(`Unable to execute program due to ${chalk.blue(error)}`)
+      logger.error(`Unable to execute program due to ${chalk.red(error)}`)
     }
   }
 }

@@ -4,7 +4,8 @@ function main(block_arr) {
   let testnet = `https://rinkeby.infura.io/${process.env.INFURA_ACCESS_TOKEN}`
   let queueName = 'Ethereum Queue'
   let dirPath = './block-transaction';
-  const bdq = new BlockDetailQueue(queueName, testnet, dirPath, true)
+  let enableLog = true
+  const bdq = new BlockDetailQueue(queueName, testnet, dirPath, enableLog)
   bdq.main(block_arr)
 }
 
