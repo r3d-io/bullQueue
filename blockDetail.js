@@ -8,10 +8,13 @@ dotenv.config();
 
 class BlockDetailQueue {
 
-  constructor(queueName, testnet, dirPath) {
+  constructor(queueName, testnet, dirPath, output) {
+    if (!output)
+      console.log("program executing please wait")
     this.web3 = new Web3(new Web3.providers.HttpProvider(testnet))
     this.transactionQueue = new Bull(queueName);
     this.dirPath = dirPath
+    this.output = output
   }
 
   async getBlockDetail(block_address) {
@@ -28,7 +31,8 @@ class BlockDetailQueue {
     try {
       transactions.forEach(trans => {
         transactionQueue.add({ trans: trans, block: address });
-        console.log(`Added transaction ${trans} on queue ${address}`)
+        if (this.output)
+          console.log(`Added transaction ${trans} on queue ${address}`)
       });
     }
     catch{
@@ -43,7 +47,8 @@ class BlockDetailQueue {
         let trans = job.data.trans
         let transObject = await this.web3.eth.getTransaction(trans)
         transArray[job.data.block].push(transObject)
-        console.log(`proccessed transaction ${trans} on queue ${job.data.block}`)
+        if (this.output)
+          console.log(`proccessed transaction ${trans} on queue ${job.data.block}`)
         jobDone();
         if (transArray[job.data.block].length === transactionCount) {
           this.writeToFile(job.data.block, transArray)
@@ -60,7 +65,8 @@ class BlockDetailQueue {
   async queueCompletion(transactionQueue) {
     transactionQueue.on('completed', (job, result) => {
       job.remove();
-      console.log(`Job with id ${job.id} has been completed`);
+      if (this.output)
+        console.log(`Job with id ${job.id} has been completed`);
     })
   }
 
@@ -97,7 +103,7 @@ function main(block_arr) {
   let testnet = `https://rinkeby.infura.io/${process.env.INFURA_ACCESS_TOKEN}`
   let queueName = 'Ethereum Queue'
   let dirPath = './block-transaction';
-  const bd = new BlockDetailQueue(queueName, testnet, dirPath)
+  const bd = new BlockDetailQueue(queueName, testnet, dirPath, false)
   bd.blockDetail(block_arr)
 }
 
