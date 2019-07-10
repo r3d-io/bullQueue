@@ -4,7 +4,11 @@ const Web3 = require('web3');
 const dotenv = require('dotenv');
 var Bull = require('bull');
 var fs = require('fs');
+const chalk = require('chalk');
+var log4js = require('log4js');
+var logger = log4js.getLogger();
 dotenv.config();
+logger.level = 'error';
 
 class BlockDetailQueue {
 
@@ -23,7 +27,7 @@ class BlockDetailQueue {
       return blockDetail.transactions
     }
     catch (error) {
-      console.log(`unable to get block details ${error}`)
+      logger.error(`Unable to get block details ${chalk.blue(error)}`)
     }
   }
 
@@ -35,8 +39,8 @@ class BlockDetailQueue {
           console.log(`Added transaction ${trans} on queue ${address}`)
       });
     }
-    catch{
-      console.log('No transaction recieved please check your internet connection')
+    catch(error){
+      logger.error(`Unable to add trnasction to queue because ${chalk.blue(error)}`)
     }
   }
 
@@ -52,13 +56,11 @@ class BlockDetailQueue {
         jobDone();
         if (transArray[job.data.block].length === transactionCount) {
           this.writeToFile(job.data.block, transArray)
-          return true
-          // transactionQueue.close()
         }
       });
     }
     catch (error) {
-      console.log(`Unable to process transaction due to ${error}`)
+      logger.error(`Unable to process transaction due to ${chalk.blue(error)}`)
     }
   }
 
@@ -70,47 +72,39 @@ class BlockDetailQueue {
     })
   }
 
-  writeToFile(block_address, transArray) {
+  writeToFile(block_address, txnArray) {
     if (!fs.existsSync(this.dirPath)) {
       fs.mkdirSync(this.dirPath);
     }
-    var json = JSON.stringify(transArray);
+    var json = JSON.stringify(txnArray);
     try {
       fs.writeFile(`${this.dirPath}/${block_address}.json`, json, 'utf8', function (err) {
         if (err) throw err;
         console.log(`completed file write for ${block_address}`);
-        // process.exit()
       });
     }
     catch (error) {
-      console.log(`Unable to write to the file due to${error}`)
+      logger.error(`Unable to write to the file due to${chalk.blue(error)}`)
     }
   }
 
-  async blockDetail(block_arr) {
-    let transArray = {}
-    block_arr.forEach(async address => {
-      transArray[address] = []
-      let transactions = await this.getBlockDetail(address)
-      this.addQueue(address, transactions, this.transactionQueue)
-    });
-    this.processTransaction(transArray, this.transactionQueue)
-    this.queueCompletion(this.transactionQueue)
+  async main(block_arr) {
+    let blockTxnArray = {}
+    try {
+      block_arr.forEach(async blochHash => {
+        blockTxnArray[blochHash] = []
+        let transactions = await this.getBlockDetail(blochHash)
+        if (typeof transactions === 'undefined' || transactions.length <= 0)
+          throw new Error ("Empty array receieved")
+        this.addQueue(blochHash, transactions, this.transactionQueue)
+      });
+      this.processTransaction(blockTxnArray, this.transactionQueue)
+      this.queueCompletion(this.transactionQueue)
+    }
+    catch (error) {
+      logger.error(`Unable to execute program due to ${chalk.blue(error)}`)
+    }
   }
 }
-
-function main(block_arr) {
-  let testnet = `https://rinkeby.infura.io/${process.env.INFURA_ACCESS_TOKEN}`
-  let queueName = 'Ethereum Queue'
-  let dirPath = './block-transaction';
-  const bd = new BlockDetailQueue(queueName, testnet, dirPath, false)
-  bd.blockDetail(block_arr)
-}
-
-let block_arr = ["0xd6138375419d0d82e333b2e84998f88eb42563dcf46cbfa19eefbecdcd5935e7",
-  "0xcb7695375b0948528396db9a4377923b857de1823273585fa70fca3e7fc8b19d",
-  "0x8e4ec07e3f9de5faf12fa9e25afe86a9830dbea20d95c18b7a7d7c951619f7e5"
-]
-main(block_arr)
 
 module.exports = { BlockDetailQueue }
