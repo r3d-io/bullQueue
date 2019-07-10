@@ -6,11 +6,12 @@ var Bull = require('bull');
 var fs = require('fs');
 dotenv.config();
 
-class BlockDetail {
+class BlockDetailQueue {
 
-  constructor(queueName, testnet) {
+  constructor(queueName, testnet, dirPath) {
     this.web3 = new Web3(new Web3.providers.HttpProvider(testnet))
     this.transactionQueue = new Bull(queueName);
+    this.dirPath = dirPath
   }
 
   async getBlockDetail(block_address) {
@@ -24,10 +25,15 @@ class BlockDetail {
   }
 
   addQueue(address, transactions, transactionQueue) {
-    transactions.forEach(trans => {
-      transactionQueue.add({ trans: trans, block: address });
-      console.log(`Added transaction ${trans} on queue ${address}`)
-    });
+    try {
+      transactions.forEach(trans => {
+        transactionQueue.add({ trans: trans, block: address });
+        console.log(`Added transaction ${trans} on queue ${address}`)
+      });
+    }
+    catch{
+      console.log('No transaction recieved please check your internet connection')
+    }
   }
 
   async processTransaction(transArray, transactionQueue) {
@@ -41,6 +47,7 @@ class BlockDetail {
         jobDone();
         if (transArray[job.data.block].length === transactionCount) {
           this.writeToFile(job.data.block, transArray)
+          return true
           // transactionQueue.close()
         }
       });
@@ -58,13 +65,12 @@ class BlockDetail {
   }
 
   writeToFile(block_address, transArray) {
-    var dir = './block-transaction';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir);
+    if (!fs.existsSync(this.dirPath)) {
+      fs.mkdirSync(this.dirPath);
     }
     var json = JSON.stringify(transArray);
     try {
-      fs.writeFile(`${dir}/${block_address}.json`, json, 'utf8', function (err) {
+      fs.writeFile(`${this.dirPath}/${block_address}.json`, json, 'utf8', function (err) {
         if (err) throw err;
         console.log(`completed file write for ${block_address}`);
         // process.exit()
@@ -74,19 +80,25 @@ class BlockDetail {
       console.log(`Unable to write to the file due to${error}`)
     }
   }
+
+  async blockDetail(block_arr) {
+    let transArray = {}
+    block_arr.forEach(async address => {
+      transArray[address] = []
+      let transactions = await this.getBlockDetail(address)
+      this.addQueue(address, transactions, this.transactionQueue)
+    });
+    this.processTransaction(transArray, this.transactionQueue)
+    this.queueCompletion(this.transactionQueue)
+  }
 }
 
-async function main(block_arr) {
+function main(block_arr) {
   let testnet = `https://rinkeby.infura.io/${process.env.INFURA_ACCESS_TOKEN}`
-  let transArray = {}
-  const bd = new BlockDetail('Ethereum Queue', testnet)
-  block_arr.forEach(async address => {
-    transArray[address] = []
-    let transactions = await bd.getBlockDetail(address)
-    bd.addQueue(address, transactions, bd.transactionQueue)
-  });
-  bd.processTransaction(transArray, bd.transactionQueue)
-  bd.queueCompletion(bd.transactionQueue)
+  let queueName = 'Ethereum Queue'
+  let dirPath = './block-transaction';
+  const bd = new BlockDetailQueue(queueName, testnet, dirPath)
+  bd.blockDetail(block_arr)
 }
 
 let block_arr = ["0xd6138375419d0d82e333b2e84998f88eb42563dcf46cbfa19eefbecdcd5935e7",
@@ -95,4 +107,4 @@ let block_arr = ["0xd6138375419d0d82e333b2e84998f88eb42563dcf46cbfa19eefbecdcd59
 ]
 main(block_arr)
 
-module.exports = { BlockDetail }
+module.exports = { BlockDetailQueue }
