@@ -12,12 +12,13 @@ logger.level = 'error';
 
 class BlockDetailQueue {
 
-  constructor(queueName, testnet, dirPath, output) {
+  constructor(blockQueueName, txnQueueName, testnet, dirPath, output) {
     if (output)
       logger.level = 'info';
     console.log("program executing please wait")
     this.web3 = new Web3(new Web3.providers.HttpProvider(testnet))
-    this.transactionQueue = new Bull(queueName);
+    this.transactionQueue = new Bull(txnQueueName);
+    this.blockQueue = new Bull(blockQueueName);
     this.dirPath = dirPath
     this.output = output
   }
@@ -32,10 +33,10 @@ class BlockDetailQueue {
     }
   }
 
-  addQueue(hash, transactions, transactionQueue) {
+  addTxnQueue(hash, transactions, transactionQueue) {
     try {
       transactions.forEach(txn => {
-        transactionQueue.add({ transaction: txn, block: hash },{removeOnComplete:true, attempts:5 });
+        transactionQueue.add({ transaction: txn, block: hash }, { removeOnComplete: true, attempts: 5 });
         logger.info(`Added transaction ${chalk.cyan(txn)} \n on queue ${chalk.yellow(hash)}`)
       });
     }
@@ -44,17 +45,27 @@ class BlockDetailQueue {
     }
   }
 
-  async processTransaction(blockTxnCount, blockTxnArray, transactionQueue) {
+  addBlockQueue(blockHash, blockQueue) {
+    try {
+      blockQueue.add({ block: blockHash }, { removeOnComplete: true, attempts: 5 });
+      logger.info(`Added Block ${chalk.gray(blockHash)}`)
+    }
+    catch (error) {
+      logger.error(`Unable to add block to queue because ${chalk.red(error)}`)
+    }
+  }
+
+  async processTransaction(blockTxnObj, transactionQueue) {
     try {
       transactionQueue.process(async (job, jobDone) => {
         let txn = job.data.transaction
         let blockHash = job.data.block
         let txnObject = await this.web3.eth.getTransaction(txn)
-        blockTxnArray[blockHash].push(txnObject)
+        blockTxnObj[blockHash].txnArray.push(txnObject)
         logger.info(`proccessed transaction ${chalk.cyan(txn)} \n on queue ${chalk.yellow(blockHash)}`)
         jobDone();
-        if (blockTxnArray[blockHash].length === blockTxnCount[blockHash])
-          this.writeToFile(blockHash, blockTxnArray[blockHash])
+        if (blockTxnObj[blockHash].txnArray.length === blockTxnObj[blockHash].count)
+          this.writeToFile(blockHash, blockTxnObj[blockHash].txnArray)
       });
     }
     catch (error) {
@@ -86,19 +97,23 @@ class BlockDetailQueue {
   }
 
   async main(blockHashes) {
-    let blockTxnArray = {}
-    let blockTxnCount = {}
+    let blockTxnObj = {}
+    blockHashes.forEach(blockHash => {
+      this.addBlockQueue(blockHash, this.blockQueue)
+    })
     try {
-      blockHashes.forEach(async blockHash => {
-        blockTxnArray[blockHash] = []
-        blockTxnCount[blockHash] = await this.web3.eth.getBlockTransactionCount(blockHash)
+      this.blockQueue.process(async (job, jobDone) => {
+        let blockHash = job.data.block
+        blockTxnObj[blockHash] = {}
+        blockTxnObj[blockHash].txnArray = []
+        blockTxnObj[blockHash].count = await this.web3.eth.getBlockTransactionCount(blockHash)
         let transactions = await this.getBlockDetail(blockHash)
         if (typeof transactions === 'undefined' || transactions.length <= 0)
           throw new Error("Empty array receieved")
-        this.addQueue(blockHash, transactions, this.transactionQueue)
+        this.addTxnQueue(blockHash, transactions, this.transactionQueue)
+        jobDone()
       });
-      this.processTransaction(blockTxnCount, blockTxnArray, this.transactionQueue)
-      // this.queueCompletion(this.transactionQueue)
+      this.processTransaction(blockTxnObj, this.transactionQueue)
     }
     catch (error) {
       logger.error(`Unable to execute program due to ${chalk.red(error)}`)
