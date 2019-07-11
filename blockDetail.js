@@ -73,6 +73,7 @@ class BlockDetailQueue {
         done()
       });
       this.processTransaction(this.transactionQueue)
+      this.queueCompletion(this.transactionQueue)
     }
     catch (error) {
       logger.error(`Unable to execute program due to ${chalk.red(error)}`)
@@ -89,9 +90,6 @@ class BlockDetailQueue {
         this.blockTxnObj[blockHash].txnArray.push(txnObject)
         logger.info(`proccessed transaction ${chalk.cyan(txn)} \n on queue ${chalk.yellow(blockHash)}`)
         jobDone();
-
-        if (this.blockTxnObj[blockHash].txnArray.length === this.blockTxnObj[blockHash].count)
-          this.writeToFile(blockHash, this.blockTxnObj[blockHash].txnArray)
       });
     }
     catch (error) {
@@ -101,7 +99,10 @@ class BlockDetailQueue {
 
   async queueCompletion(queue) {
     queue.on('completed', (job) => {
-      job.remove();
+      let blockHash = job.data.block
+      if ( (this.blockTxnObj[blockHash].txnArray.length === this.blockTxnObj[blockHash].count) ||
+        ( (this.blockTxnObj[blockHash].proccessedCount + queue.getFailedCount() ) >= this.blockTxnObj[blockHash].count ) )
+        this.writeToFile(blockHash, this.blockTxnObj[blockHash].txnArray)
       logger.info(`Job with id ${job.id} has been completed`);
     })
     queue.on('stalled', (job) => {
