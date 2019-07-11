@@ -101,13 +101,16 @@ class BlockDetailQueue {
     queue.on('completed', (job) => {
       let blockHash = job.data.block
       if ( (this.blockTxnObj[blockHash].txnArray.length === this.blockTxnObj[blockHash].count) ||
-        ( (this.blockTxnObj[blockHash].proccessedCount + queue.getFailedCount() ) >= this.blockTxnObj[blockHash].count ) )
+        ( (this.blockTxnObj[blockHash].proccessedCount + Promise.resolve(queue.getFailedCount()) ) >=   this.blockTxnObj[blockHash].count ) )
         this.writeToFile(blockHash, this.blockTxnObj[blockHash].txnArray)
       logger.info(`Job with id ${job.id} has been completed`);
     })
     queue.on('stalled', (job) => {
       logger.info(`Job with id ${job.id} has been stalled`);
       job.remove();
+    })
+    queue.on('error', (error) => {
+      logger.error(error)
     })
   }
 
