@@ -55,15 +55,40 @@ class BlockDetailQueue {
     }
   }
 
+  async processBlock() {
+    let blockTxnObj = {}
+    try {
+      this.blockQueue.process(async (job, done) => {
+        let blockHash = job.data.block
+        blockTxnObj[blockHash] = {}
+        blockTxnObj[blockHash].txnArray = []
+        blockTxnObj[blockHash].count = await this.web3.eth.getBlockTransactionCount(blockHash)
+
+        let transactions = await this.getBlockDetail(blockHash)
+        if (typeof transactions === 'undefined' || transactions.length <= 0)
+          throw new Error("Empty array receieved")
+
+        this.addTxnQueue(blockHash, transactions, this.transactionQueue)
+        done()
+      });
+      this.processTransaction(blockTxnObj, this.transactionQueue)
+    }
+    catch (error) {
+      logger.error(`Unable to execute program due to ${chalk.red(error)}`)
+    }
+  }
+
   async processTransaction(blockTxnObj, transactionQueue) {
     try {
       transactionQueue.process(async (job, jobDone) => {
         let txn = job.data.transaction
         let blockHash = job.data.block
         let txnObject = await this.web3.eth.getTransaction(txn)
+
         blockTxnObj[blockHash].txnArray.push(txnObject)
         logger.info(`proccessed transaction ${chalk.cyan(txn)} \n on queue ${chalk.yellow(blockHash)}`)
         jobDone();
+
         if (blockTxnObj[blockHash].txnArray.length === blockTxnObj[blockHash].count)
           this.writeToFile(blockHash, blockTxnObj[blockHash].txnArray)
       });
@@ -97,27 +122,10 @@ class BlockDetailQueue {
   }
 
   async main(blockHashes) {
-    let blockTxnObj = {}
     blockHashes.forEach(blockHash => {
       this.addBlockQueue(blockHash, this.blockQueue)
     })
-    try {
-      this.blockQueue.process(async (job, jobDone) => {
-        let blockHash = job.data.block
-        blockTxnObj[blockHash] = {}
-        blockTxnObj[blockHash].txnArray = []
-        blockTxnObj[blockHash].count = await this.web3.eth.getBlockTransactionCount(blockHash)
-        let transactions = await this.getBlockDetail(blockHash)
-        if (typeof transactions === 'undefined' || transactions.length <= 0)
-          throw new Error("Empty array receieved")
-        this.addTxnQueue(blockHash, transactions, this.transactionQueue)
-        jobDone()
-      });
-      this.processTransaction(blockTxnObj, this.transactionQueue)
-    }
-    catch (error) {
-      logger.error(`Unable to execute program due to ${chalk.red(error)}`)
-    }
+    this.processBlock()
   }
 }
 
