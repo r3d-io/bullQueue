@@ -21,6 +21,7 @@ class BlockDetailQueue {
     this.blockQueue = new Bull(blockQueueName);
     this.dirPath = dirPath
     this.output = output
+    this.blockTxnObj = {}
   }
 
   async getBlockDetail(blockHash) {
@@ -56,13 +57,13 @@ class BlockDetailQueue {
   }
 
   async processBlock() {
-    let blockTxnObj = {}
     try {
       this.blockQueue.process(async (job, done) => {
         let blockHash = job.data.block
-        blockTxnObj[blockHash] = {}
-        blockTxnObj[blockHash].txnArray = []
-        blockTxnObj[blockHash].count = await this.web3.eth.getBlockTransactionCount(blockHash)
+        this.blockTxnObj[blockHash] = {}
+        this.blockTxnObj[blockHash].txnArray = []
+        this.blockTxnObj[blockHash].proccessedCount = 0
+        this.blockTxnObj[blockHash].count = await this.web3.eth.getBlockTransactionCount(blockHash)
 
         let transactions = await this.getBlockDetail(blockHash)
         if (typeof transactions === 'undefined' || transactions.length <= 0)
@@ -71,26 +72,26 @@ class BlockDetailQueue {
         this.addTxnQueue(blockHash, transactions, this.transactionQueue)
         done()
       });
-      this.processTransaction(blockTxnObj, this.transactionQueue)
+      this.processTransaction(this.transactionQueue)
     }
     catch (error) {
       logger.error(`Unable to execute program due to ${chalk.red(error)}`)
     }
   }
 
-  async processTransaction(blockTxnObj, transactionQueue) {
+  async processTransaction(transactionQueue) {
     try {
       transactionQueue.process(async (job, jobDone) => {
         let txn = job.data.transaction
         let blockHash = job.data.block
         let txnObject = await this.web3.eth.getTransaction(txn)
-
-        blockTxnObj[blockHash].txnArray.push(txnObject)
+        this.blockTxnObj[blockHash].proccessedCount += 1
+        this.blockTxnObj[blockHash].txnArray.push(txnObject)
         logger.info(`proccessed transaction ${chalk.cyan(txn)} \n on queue ${chalk.yellow(blockHash)}`)
         jobDone();
 
-        if (blockTxnObj[blockHash].txnArray.length === blockTxnObj[blockHash].count)
-          this.writeToFile(blockHash, blockTxnObj[blockHash].txnArray)
+        if (this.blockTxnObj[blockHash].txnArray.length === this.blockTxnObj[blockHash].count)
+          this.writeToFile(blockHash, this.blockTxnObj[blockHash].txnArray)
       });
     }
     catch (error) {
@@ -98,10 +99,14 @@ class BlockDetailQueue {
     }
   }
 
-  async queueCompletion(transactionQueue) {
-    transactionQueue.on('completed', (job, result) => {
+  async queueCompletion(queue) {
+    queue.on('completed', (job) => {
       job.remove();
       logger.info(`Job with id ${job.id} has been completed`);
+    })
+    queue.on('stalled', (job) => {
+      logger.info(`Job with id ${job.id} has been stalled`);
+      job.remove();
     })
   }
 
